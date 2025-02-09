@@ -25,7 +25,6 @@ type fileVisitor struct {
 }
 
 func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
-	//fmt.Println(n)
 	call, ok := n.(*ast.CallExpr)
 	if !ok {
 		return v
@@ -47,7 +46,7 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 	case "Errorf":
 		selector.X = ast.NewIdent("fmt")
 		v.needsFmt = true
-	case "Wrap":
+	case "Wrap", "Wrapf":
 		err := v.fixWrap(call)
 		if err != nil {
 			v.err = errors.Join(v.err, fmt.Errorf("could not convert Wrap: %v", err))
@@ -61,8 +60,8 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 
 func (v *fileVisitor) fixWrap(call *ast.CallExpr) error {
 	selector := call.Fun.(*ast.SelectorExpr)
-	if len(call.Args) != 2 {
-		return errors.New("wrap call does have two args")
+	if len(call.Args) < 2 {
+		return errors.New("wrap call must have at least two args")
 	}
 	errToWrap, ok := call.Args[0].(*ast.Ident)
 	if !ok {
@@ -81,10 +80,14 @@ func (v *fileVisitor) fixWrap(call *ast.CallExpr) error {
 
 	selector.X = ast.NewIdent("fmt")
 	selector.Sel = ast.NewIdent("Errorf")
-	call.Args = []ast.Expr{
+	newArgs := []ast.Expr{
 		msgLit,
-		errToWrap,
 	}
+	for i := 2; i < len(call.Args); i++ {
+		newArgs = append(newArgs, call.Args[i])
+	}
+	newArgs = append(newArgs, errToWrap)
+	call.Args = newArgs
 
 	return nil
 }
