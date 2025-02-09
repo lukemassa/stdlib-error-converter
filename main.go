@@ -27,7 +27,7 @@ func (v *BarToBazVisitor) Visit(n ast.Node) ast.Visitor {
 	return v
 }
 
-func processFile(filename string, debug bool) error {
+func (v *BarToBazVisitor) processFile(filename string) error {
 	fs := token.NewFileSet()
 
 	// Read the file
@@ -43,7 +43,7 @@ func processFile(filename string, debug bool) error {
 	}
 
 	// Modify the AST using the visitor
-	ast.Walk(&BarToBazVisitor{debug: debug}, tree)
+	ast.Walk(v, tree)
 
 	// Create a temporary file
 	tempFilename := filename + ".tmp"
@@ -70,7 +70,11 @@ func main() {
 	debug := flag.Bool("debug", false, "enable debug output")
 	flag.Parse()
 
-	if err := processFile(filename, *debug); err != nil {
+	v := BarToBazVisitor{
+		debug: *debug,
+	}
+
+	if err := v.processFile(filename); err != nil {
 		log.Fatalf("error processing file: %v", err)
 	}
 }

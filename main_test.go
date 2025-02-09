@@ -63,8 +63,10 @@ func testOneFile(t *testing.T, beforeFile, afterFile string) {
 	if err != nil {
 		t.Fatalf("failed to read after file: %v", err)
 	}
-
-	if err := processFile(beforeFile, false); err != nil {
+	v := BarToBazVisitor{
+		debug: false,
+	}
+	if err := v.processFile(beforeFile); err != nil {
 		t.Fatalf("processFile failed: %v", err)
 	}
 
