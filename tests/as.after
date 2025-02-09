@@ -1,0 +1,9 @@
+package foo
+
+import (
+	"errors"
+)
+
+func hi() error {
+	return errors.As("foo", nil)
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -9,25 +10,70 @@ import (
 	"go/token"
 	"log"
 	"os"
+
+	"golang.org/x/tools/go/ast/astutil"
 )
 
-type BarToBazVisitor struct {
-	debug bool
+const pkgErrors = "github.com/pkg/errors"
+
+var debug = flag.Bool("debug", false, "enable debug output")
+
+type fileVisitor struct {
+	err         error // More than one maybe?
+	needsErrors bool
+	needsFmt    bool
 }
 
-func (v *BarToBazVisitor) Visit(n ast.Node) ast.Visitor {
-	if call, ok := n.(*ast.CallExpr); ok {
-		if fun, ok := call.Fun.(*ast.Ident); ok && fun.Name == "bar" {
-			if v.debug {
-				fmt.Printf("Replacing function call: %s -> baz\n", fun.Name)
-			}
-			fun.Name = "baz"
+func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
+	//fmt.Println(n)
+	call, ok := n.(*ast.CallExpr)
+	if !ok {
+		return v
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return v
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	if !ok || pkg.Name != "errors" {
+		return v
+	}
+	switch selector.Sel.Name {
+	case "As", "Is", "New":
+		if *debug {
+			fmt.Printf("errors.%s is the same in pkg/errors and stdlib, skipping\n", selector.Sel.Name)
 		}
+		v.needsErrors = true
+	case "Errorf":
+		selector.X = ast.NewIdent("fmt")
+		v.needsFmt = true
+	default:
+		v.err = errors.Join(v.err, fmt.Errorf("unable to translate for %s", selector.Sel.Name))
 	}
 	return v
 }
 
-func (v *BarToBazVisitor) processFile(filename string) error {
+func (v *fileVisitor) fixWrap(call ast.Node) {
+
+}
+
+func fixFile(fset *token.FileSet, tree *ast.File) error {
+	v := fileVisitor{}
+	ast.Walk(&v, tree)
+	if v.err != nil {
+		return v.err
+	}
+	if v.needsErrors {
+		astutil.AddImport(fset, tree, "errors")
+	}
+	if v.needsFmt {
+		astutil.AddImport(fset, tree, "fmt")
+	}
+	astutil.DeleteImport(fset, tree, pkgErrors)
+	return nil
+}
+
+func processFile(filename string) error {
 	fs := token.NewFileSet()
 
 	// Read the file
@@ -42,8 +88,10 @@ func (v *BarToBazVisitor) processFile(filename string) error {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
 
-	// Modify the AST using the visitor
-	ast.Walk(v, tree)
+	err = fixFile(fs, tree)
+	if err != nil {
+		return err
+	}
 
 	// Create a temporary file
 	tempFilename := filename + ".tmp"
@@ -66,15 +114,10 @@ func (v *BarToBazVisitor) processFile(filename string) error {
 }
 
 func main() {
-	filename := "foo.go"
-	debug := flag.Bool("debug", false, "enable debug output")
+	filename := "tests/as.go"
 	flag.Parse()
 
-	v := BarToBazVisitor{
-		debug: *debug,
-	}
-
-	if err := v.processFile(filename); err != nil {
+	if err := processFile(filename); err != nil {
 		log.Fatalf("error processing file: %v", err)
 	}
 }
