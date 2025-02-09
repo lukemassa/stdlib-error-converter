@@ -47,14 +47,46 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 	case "Errorf":
 		selector.X = ast.NewIdent("fmt")
 		v.needsFmt = true
+	case "Wrap":
+		err := v.fixWrap(call)
+		if err != nil {
+			v.err = errors.Join(v.err, fmt.Errorf("could not convert Wrap: %v", err))
+		}
+		v.needsFmt = true
 	default:
 		v.err = errors.Join(v.err, fmt.Errorf("unable to translate for %s", selector.Sel.Name))
 	}
 	return v
 }
 
-func (v *fileVisitor) fixWrap(call ast.Node) {
+func (v *fileVisitor) fixWrap(call *ast.CallExpr) error {
+	selector := call.Fun.(*ast.SelectorExpr)
+	if len(call.Args) != 2 {
+		return errors.New("wrap call does have two args")
+	}
+	errToWrap, ok := call.Args[0].(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("first arg to Wrap is not identifier")
+	}
+	msgLit, ok := call.Args[1].(*ast.BasicLit)
+	if !ok {
+		return fmt.Errorf("second arg to Wrap is not a literal")
+	}
+	msg := msgLit.Value
+	if msg[0] != '"' || msg[len(msg)-1] != '"' {
+		return fmt.Errorf("second arg to Wrap is not a string literal")
+	}
+	// Update the string to include wrapped error
+	msgLit.Value = msg[:len(msg)-1] + `: %w"`
 
+	selector.X = ast.NewIdent("fmt")
+	selector.Sel = ast.NewIdent("Errorf")
+	call.Args = []ast.Expr{
+		msgLit,
+		errToWrap,
+	}
+
+	return nil
 }
 
 func fixFile(fset *token.FileSet, tree *ast.File) error {

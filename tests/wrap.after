@@ -1,0 +1,9 @@
+package foo
+
+import (
+	"fmt"
+)
+
+func hi(some error) error {
+	return fmt.Errorf("Hello: %w", some)
+}
