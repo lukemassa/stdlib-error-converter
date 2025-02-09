@@ -1,0 +1,7 @@
+1. Handle `errors.Wrap(err, fmt.Sprintf("foobar"))`
+2. Errors better at telling you where the issue is
+3. Summarize what changes were made
+4. Walk through all files
+5. Can we assert/check that err is not nil?
+6. Handle Unwrap?
+7. Use Is() instead of Cause() ?

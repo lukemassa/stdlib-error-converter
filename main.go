@@ -19,7 +19,7 @@ const pkgErrors = "github.com/pkg/errors"
 var debug = flag.Bool("debug", false, "enable debug output")
 
 type fileVisitor struct {
-	err         error // More than one maybe?
+	err         error
 	needsErrors bool
 	needsFmt    bool
 }
@@ -44,12 +44,17 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 		}
 		v.needsErrors = true
 	case "Errorf":
+		if *debug {
+			fmt.Println("errors.Errorf can be replaced with fmt.Errorf")
+		}
 		selector.X = ast.NewIdent("fmt")
 		v.needsFmt = true
 	case "Wrap", "Wrapf":
 		err := v.fixWrap(call)
 		if err != nil {
 			v.err = errors.Join(v.err, fmt.Errorf("could not convert Wrap: %v", err))
+		} else if *debug {
+			fmt.Println("Replacing errors.Wrap with fmt.Errorf")
 		}
 		v.needsFmt = true
 	default:
