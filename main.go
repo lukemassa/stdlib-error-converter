@@ -55,8 +55,8 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 			v.err = errors.Join(v.err, fmt.Errorf("could not convert Wrap: %v", err))
 		} else if *debug {
 			fmt.Println("Replacing errors.Wrap with fmt.Errorf")
+			v.needsFmt = true
 		}
-		v.needsFmt = true
 	default:
 		v.err = errors.Join(v.err, fmt.Errorf("unable to translate for %s", selector.Sel.Name))
 	}
