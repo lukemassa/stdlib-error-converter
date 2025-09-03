@@ -21,6 +21,7 @@ type fileVisitor struct {
 	needsErrors bool
 	needsFmt    bool
 	fixed       int
+	failedToFix int
 }
 
 func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
@@ -47,9 +48,13 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 		v.needsFmt = true
 		v.fixed++
 	case "Wrap", "Wrapf":
-		err := v.fixWrap(call)
+		ok, err := v.fixWrap(call)
 		if err != nil {
-			v.err = errors.Join(v.err, fmt.Errorf("could not convert Wrap: %v", err))
+			v.err = errors.Join(v.err, err)
+			return v
+		}
+		if !ok {
+			v.failedToFix++
 			return v
 		}
 
@@ -63,22 +68,25 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 	return v
 }
 
-func (v *fileVisitor) fixWrap(call *ast.CallExpr) error {
+func (v *fileVisitor) fixWrap(call *ast.CallExpr) (bool, error) {
 	selector := call.Fun.(*ast.SelectorExpr)
 	if len(call.Args) < 2 {
-		return errors.New("wrap call must have at least two args")
+		return false, errors.New("wrap call must have at least two args")
 	}
 	errToWrap, ok := call.Args[0].(*ast.Ident)
 	if !ok {
-		return fmt.Errorf("first arg to Wrap is not identifier")
+		log.Warn("Cannot fix if first call to wrap is not an identifier")
+		return false, nil
 	}
 	msgLit, ok := call.Args[1].(*ast.BasicLit)
 	if !ok {
-		return fmt.Errorf("second arg to Wrap is not a literal")
+		log.Warn("Cannot fix if second call to wrap is not a literal")
+		return false, nil
 	}
 	msg := msgLit.Value
 	if msg[0] != '"' || msg[len(msg)-1] != '"' {
-		return fmt.Errorf("second arg to Wrap is not a string literal")
+		log.Warn("Cannot fix if second call to wrap is not a string literal")
+		return false, nil
 	}
 	// Update the string to include wrapped error
 	msgLit.Value = msg[:len(msg)-1] + `: %w"`
@@ -94,7 +102,7 @@ func (v *fileVisitor) fixWrap(call *ast.CallExpr) error {
 	newArgs = append(newArgs, errToWrap)
 	call.Args = newArgs
 
-	return nil
+	return true, nil
 }
 
 func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
@@ -117,6 +125,10 @@ func fixFile(fset *token.FileSet, tree *ast.File) error {
 	ast.Walk(&v, tree)
 	if v.err != nil {
 		return v.err
+	}
+	if v.failedToFix != 0 {
+		log.Infof("Fixed %d, failed to fix %d", v.fixed, v.failedToFix)
+		return nil
 	}
 	if v.needsErrors {
 		astutil.AddImport(fset, tree, "errors")
