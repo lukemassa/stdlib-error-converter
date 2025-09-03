@@ -1,4 +1,4 @@
-package main
+package processor
 
 import (
 	"errors"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 )
+
+const testDir = "testdata"
 
 func fileExists(filename string) (bool, error) {
 	_, err := os.Stat(filename)
@@ -21,7 +23,6 @@ func fileExists(filename string) (bool, error) {
 }
 
 func TestProcessFile(t *testing.T) {
-	testDir := "tests"
 
 	entries, err := os.ReadDir(testDir)
 	if err != nil {
@@ -98,7 +99,7 @@ func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool)
 		t.Fatalf("failed to read after file: %v", err)
 	}
 
-	err = processFile(currentFile)
+	err = ProcessFile(currentFile)
 	if expectErr {
 		if err == nil {
 			t.Errorf("no error occurred, expected:\n%s", expectedContent)

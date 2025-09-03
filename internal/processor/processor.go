@@ -1,27 +1,26 @@
-package main
+package processor
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
-	"go/printer"
 	"go/token"
-	"log"
 	"os"
+	"strings"
 
+	log "github.com/lukemassa/clilog"
 	"golang.org/x/tools/go/ast/astutil"
 )
 
 const pkgErrors = "github.com/pkg/errors"
 
-var debug = flag.Bool("debug", false, "enable debug output")
-
 type fileVisitor struct {
 	err         error
 	needsErrors bool
 	needsFmt    bool
+	fixed       int
 }
 
 func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
@@ -39,26 +38,24 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 	}
 	switch selector.Sel.Name {
 	case "As", "Is", "New":
-		if *debug {
-			fmt.Printf("errors.%s is the same in pkg/errors and stdlib, skipping\n", selector.Sel.Name)
-		}
+		log.Debugf("errors.%s is the same in pkg/errors and stdlib, skipping\n", selector.Sel.Name)
+		v.fixed++
 		v.needsErrors = true
 	case "Errorf":
-		if *debug {
-			fmt.Println("errors.Errorf can be replaced with fmt.Errorf")
-		}
+		log.Debug("errors.Errorf can be replaced with fmt.Errorf")
 		selector.X = ast.NewIdent("fmt")
 		v.needsFmt = true
+		v.fixed++
 	case "Wrap", "Wrapf":
 		err := v.fixWrap(call)
 		if err != nil {
 			v.err = errors.Join(v.err, fmt.Errorf("could not convert Wrap: %v", err))
 			return v
 		}
-		if *debug {
-			fmt.Println("Replacing errors.Wrap with fmt.Errorf")
-		}
+
+		log.Debug("Replacing errors.Wrap with fmt.Errorf")
 		v.needsFmt = true
+		v.fixed++
 
 	default:
 		v.err = errors.Join(v.err, fmt.Errorf("unable to translate for %s", selector.Sel.Name))
@@ -100,8 +97,23 @@ func (v *fileVisitor) fixWrap(call *ast.CallExpr) error {
 	return nil
 }
 
+func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
+	for _, paragraph := range astutil.Imports(fset, tree) {
+		for _, importSpec := range paragraph {
+			if strings.Trim(importSpec.Path.Value, "\"") == pkgErrors {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func fixFile(fset *token.FileSet, tree *ast.File) error {
 	v := fileVisitor{}
+	if !containsPkgErrors(fset, tree) {
+		log.Debugf("Does not contain %s", pkgErrors)
+		return nil
+	}
 	ast.Walk(&v, tree)
 	if v.err != nil {
 		return v.err
@@ -112,11 +124,12 @@ func fixFile(fset *token.FileSet, tree *ast.File) error {
 	if v.needsFmt {
 		astutil.AddImport(fset, tree, "fmt")
 	}
+	log.Infof("Fixed %d references to pkg/errors", v.fixed)
 	astutil.DeleteImport(fset, tree, pkgErrors)
 	return nil
 }
 
-func processFile(filename string) error {
+func ProcessFile(filename string) error {
 	fs := token.NewFileSet()
 
 	// Read the file
@@ -126,7 +139,7 @@ func processFile(filename string) error {
 	}
 
 	// Parse the source file
-	tree, err := parser.ParseFile(fs, filename, src, parser.AllErrors)
+	tree, err := parser.ParseFile(fs, filename, src, parser.AllErrors|parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
@@ -144,7 +157,7 @@ func processFile(filename string) error {
 	}
 	defer f.Close()
 
-	if err := printer.Fprint(f, fs, tree); err != nil {
+	if err := format.Node(f, fs, tree); err != nil {
 		return fmt.Errorf("failed to write modified code: %w", err)
 	}
 
@@ -154,13 +167,4 @@ func processFile(filename string) error {
 	}
 
 	return nil
-}
-
-func main() {
-	filename := "tests/as.go"
-	flag.Parse()
-
-	if err := processFile(filename); err != nil {
-		log.Fatalf("error processing file: %v", err)
-	}
 }
