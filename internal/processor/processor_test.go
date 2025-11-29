@@ -101,7 +101,7 @@ func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool)
 		t.Fatalf("failed to read after file: %v", err)
 	}
 
-	processedContent, err := Process(currentFile, false)
+	processedContent, err := Process(currentFile)
 	if expectErr {
 		if err == nil {
 			t.Errorf("no error occurred, expected:\n%s", expectedContent)

@@ -70,6 +70,10 @@ func main() {
 	flag.Parse()
 	paths := flag.Args()
 
+	if *debug {
+		log.SetLogLevel(log.LevelDebug)
+	}
+
 	if len(paths) == 0 {
 		paths = []string{"."} // default: current directory
 	}
@@ -88,7 +92,7 @@ func main() {
 			log.Infof("Processing %s", f)
 		}
 
-		modified, err := processor.Process(f, *debug)
+		modified, err := processor.Process(f)
 		if err != nil {
 			log.Fatalf("Processing %s: %v", f, err)
 		}

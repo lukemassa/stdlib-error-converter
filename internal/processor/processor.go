@@ -142,7 +142,7 @@ func fixFile(fset *token.FileSet, tree *ast.File) error {
 	return nil
 }
 
-func Process(filename string, debug bool) ([]byte, error) {
+func Process(filename string) ([]byte, error) {
 	fs := token.NewFileSet()
 
 	// Read the file
