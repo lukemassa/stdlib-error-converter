@@ -18,6 +18,7 @@ import (
 const pkgErrors = "github.com/pkg/errors"
 
 type fileVisitor struct {
+	filename    string
 	err         error
 	needsErrors bool
 	needsFmt    bool
@@ -117,10 +118,10 @@ func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
 	return false
 }
 
-func fixFile(fset *token.FileSet, tree *ast.File) error {
+func fixFile(fset *token.FileSet, filename string, tree *ast.File) error {
 	v := fileVisitor{}
 	if !containsPkgErrors(fset, tree) {
-		log.Debugf("Does not contain %s", pkgErrors)
+		log.Debugf("%s: Does not contain %s", filename, pkgErrors)
 		return nil
 	}
 	ast.Walk(&v, tree)
@@ -128,7 +129,7 @@ func fixFile(fset *token.FileSet, tree *ast.File) error {
 		return v.err
 	}
 	if v.failedToFix != 0 {
-		log.Infof("Fixed %d, failed to fix %d", v.fixed, v.failedToFix)
+		log.Infof("%s: Fixed %d, failed to fix %d", filename, v.fixed, v.failedToFix)
 		return nil
 	}
 	if v.needsErrors {
@@ -137,7 +138,7 @@ func fixFile(fset *token.FileSet, tree *ast.File) error {
 	if v.needsFmt {
 		astutil.AddImport(fset, tree, "fmt")
 	}
-	log.Infof("Fixed %d references to pkg/errors", v.fixed)
+	log.Infof("%s: Fixed %d references to pkg/errors", filename, v.fixed)
 	astutil.DeleteImport(fset, tree, pkgErrors)
 	return nil
 }
@@ -157,7 +158,7 @@ func Process(filename string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to parse file: %w", err)
 	}
 
-	err = fixFile(fs, tree)
+	err = fixFile(fs, filename, tree)
 	if err != nil {
 		return nil, err
 	}
