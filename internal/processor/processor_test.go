@@ -79,9 +79,6 @@ func TestProcessFile(t *testing.T) {
 }
 
 func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool) {
-	if !strings.Contains(currentFile, "wrapWithOneArg") {
-		return
-	}
 	beforeContent, err := os.ReadFile(currentFile)
 	if err != nil {
 		t.Fatalf("failed to read current file: %v", err)
@@ -115,7 +112,6 @@ func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool)
 	if err != nil {
 		t.Errorf("processFile failed: %v", err)
 	}
-
 	if string(processedContent) != string(expectedContent) {
 		t.Errorf("processed file does not match expected output\nExpected:\n%s\nGot:\n%s", expectedContent, processedContent)
 	}

@@ -1,4 +1,3 @@
-- Handle `errors.Wrap(err, fmt.Sprintf("foobar"))`
 - Can we assert/check that err is not nil?
 - Handle Unwrap?
 - Use Is() instead of Cause() ?

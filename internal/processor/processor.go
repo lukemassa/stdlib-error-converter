@@ -18,7 +18,6 @@ import (
 const pkgErrors = "github.com/pkg/errors"
 
 type fileVisitor struct {
-	filename    string
 	err         error
 	needsErrors bool
 	needsFmt    bool
@@ -50,7 +49,7 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 		v.needsFmt = true
 		v.fixed++
 	case "Wrap", "Wrapf":
-		ok, err := v.fixWrap(call)
+		ok, err := fixWrap(call)
 		if err != nil {
 			v.err = errors.Join(v.err, err)
 			return v
@@ -70,7 +69,7 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 	return v
 }
 
-func (v *fileVisitor) fixWrap(call *ast.CallExpr) (bool, error) {
+func fixWrap(call *ast.CallExpr) (bool, error) {
 	selector := call.Fun.(*ast.SelectorExpr)
 	if len(call.Args) < 2 {
 		return false, errors.New("wrap call must have at least two args")
@@ -80,31 +79,84 @@ func (v *fileVisitor) fixWrap(call *ast.CallExpr) (bool, error) {
 		log.Warn("Cannot fix if first call to wrap is not an identifier")
 		return false, nil
 	}
-	msgLit, ok := call.Args[1].(*ast.BasicLit)
-	if !ok {
-		log.Warn("Cannot fix if second call to wrap is not a literal")
+
+	fmtExpr, additionalArgs := getWrapArgs(call.Args[1:])
+	if fmtExpr == nil {
 		return false, nil
 	}
-	msg := msgLit.Value
-	if msg[0] != '"' || msg[len(msg)-1] != '"' {
-		log.Warn("Cannot fix if second call to wrap is not a string literal")
-		return false, nil
-	}
+	fmtString := fmtExpr.Value
+
 	// Update the string to include wrapped error
-	msgLit.Value = msg[:len(msg)-1] + `: %w"`
+	fmtExpr.Value = fmtString[:len(fmtString)-1] + `: %w"`
+
+	// fmt.Errorf(fmt, args..., errToWrap)
+	newArgs := []ast.Expr{fmtExpr}
+
+	newArgs = append(newArgs, additionalArgs...)
+
+	newArgs = append(newArgs, errToWrap)
 
 	selector.X = ast.NewIdent("fmt")
 	selector.Sel = ast.NewIdent("Errorf")
-	newArgs := []ast.Expr{
-		msgLit,
-	}
-	for i := 2; i < len(call.Args); i++ {
-		newArgs = append(newArgs, call.Args[i])
-	}
-	newArgs = append(newArgs, errToWrap)
 	call.Args = newArgs
 
 	return true, nil
+}
+
+// getWrapArgs takes all the args after the first to Wrap, i.e. after the error
+// and returns what can be called by fmt.Errorf(), except the error
+func getWrapArgs(additionalArgs []ast.Expr) (*ast.BasicLit, []ast.Expr) {
+
+	msgLit, ok := additionalArgs[0].(*ast.BasicLit)
+	if ok && isStringLiteral(msgLit) {
+		return msgLit, additionalArgs[1:]
+	}
+	msgLit, remainingArgs := getWrapFmtPrintf(additionalArgs)
+	if msgLit == nil {
+		log.Warn("Cannot fix if second call to wrap is not a literal or a call to fmt.Sprintf()")
+	}
+	return msgLit, remainingArgs
+
+}
+func isStringLiteral(lit *ast.BasicLit) bool {
+	litValue := lit.Value
+	return litValue[0] == '"' && litValue[len(litValue)-1] == '"'
+}
+
+// getWrapFmtPrintf is like getWrapArgs, but for the particular case where the second arg
+// is fmt.Sprintf()
+func getWrapFmtPrintf(additionalArgs []ast.Expr) (*ast.BasicLit, []ast.Expr) {
+
+	if len(additionalArgs) != 1 {
+		return nil, nil
+	}
+
+	funcCall, ok := additionalArgs[0].(*ast.CallExpr)
+	if !ok {
+		return nil, nil
+	}
+	if len(funcCall.Args) < 1 {
+		return nil, nil
+	}
+	fmtSprintfCall, ok := funcCall.Fun.(*ast.SelectorExpr)
+	if !ok || fmtSprintfCall.Sel.Name != "Sprintf" {
+		return nil, nil
+	}
+	fmtIdent, ok := fmtSprintfCall.X.(*ast.Ident)
+	if !ok || fmtIdent.Name != "fmt" {
+		return nil, nil
+	}
+
+	msgLit, ok := funcCall.Args[0].(*ast.BasicLit)
+	if !ok || !isStringLiteral(msgLit) {
+		return nil, nil
+	}
+
+	// OK by the time we got here, we confirmed that additional args look exactly like:
+	// [fmt.Sprintf("some string", ...otherargs)]
+	// Then we can "fold them in" to the higher level function
+
+	return msgLit, funcCall.Args[1:]
 }
 
 func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
