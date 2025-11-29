@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -141,42 +142,27 @@ func fixFile(fset *token.FileSet, tree *ast.File) error {
 	return nil
 }
 
-func ProcessFile(filename string) error {
+func Process(filename string, debug bool) ([]byte, error) {
 	fs := token.NewFileSet()
 
 	// Read the file
 	src, err := os.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	// Parse the source file
 	tree, err := parser.ParseFile(fs, filename, src, parser.AllErrors|parser.ParseComments)
 	if err != nil {
-		return fmt.Errorf("failed to parse file: %w", err)
+		return nil, fmt.Errorf("failed to parse file: %w", err)
 	}
 
 	err = fixFile(fs, tree)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var buf bytes.Buffer
+	format.Node(&buf, fs, tree)
 
-	// Create a temporary file
-	tempFilename := filename + ".tmp"
-	f, err := os.Create(tempFilename)
-	if err != nil {
-		return fmt.Errorf("failed to create temporary file: %w", err)
-	}
-	defer f.Close()
-
-	if err := format.Node(f, fs, tree); err != nil {
-		return fmt.Errorf("failed to write modified code: %w", err)
-	}
-
-	// Replace the original file with the new one
-	if err := os.Rename(tempFilename, filename); err != nil {
-		return fmt.Errorf("failed to rename temporary file: %w", err)
-	}
-
-	return nil
+	return buf.Bytes(), nil
 }

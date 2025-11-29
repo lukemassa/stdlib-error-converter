@@ -101,7 +101,7 @@ func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool)
 		t.Fatalf("failed to read after file: %v", err)
 	}
 
-	err = ProcessFile(currentFile)
+	processedContent, err := Process(currentFile, false)
 	if expectErr {
 		if err == nil {
 			t.Errorf("no error occurred, expected:\n%s", expectedContent)
@@ -114,11 +114,6 @@ func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool)
 	}
 	if err != nil {
 		t.Errorf("processFile failed: %v", err)
-	}
-
-	processedContent, err := os.ReadFile(currentFile)
-	if err != nil {
-		t.Fatalf("failed to read processed file: %v", err)
 	}
 
 	if string(processedContent) != string(expectedContent) {
