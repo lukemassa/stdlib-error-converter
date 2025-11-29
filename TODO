@@ -1,6 +1,4 @@
 - Handle `errors.Wrap(err, fmt.Sprintf("foobar"))`
-- Better arg parsing (look for files recursively)
-- Better exported api from processor (maybe set of files to process?)
 - Errors better at telling you where the issue is
 - Walk through all files
 - Can we assert/check that err is not nil?
