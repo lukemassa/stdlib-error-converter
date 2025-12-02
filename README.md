@@ -28,7 +28,9 @@ func hi(some error) error {
 
 ## Known bugs/limitations
 
+When the code is unable to do a conversion, it prints a warning but continues to convert other aspects of the file.
+
 - For Wrap(), we should check that err != nil first (since fmt.Errorf() and errors.Wrap treat nil differently)
-- How to handle Unwrap()?
-- Can we use Is() instead of Cause()?
-- The code doesn't error anymore, check that "reasons" match
+- Cannot convert Unwrap()
+- Cannot Cause() (maybe we can use Is somehow?)
+- Doesn't handle pkg/errors being imported under a different name (or errors for that matter)
