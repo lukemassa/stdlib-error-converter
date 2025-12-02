@@ -81,9 +81,9 @@ func processFile(t *testing.T, filename string) ([]byte, []string) {
 		os.Rename(backupFile, filename)
 	}()
 
-	processedContent, err := Process(filename)
+	processedContent, err := process(filename)
 	require.NoError(t, err)
 
-	return processedContent.Content, processedContent.FailedToFixReasons
+	return processedContent.content, processedContent.failedToFixReasons
 
 }

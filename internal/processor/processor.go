@@ -14,9 +14,9 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
-type Result struct {
-	Content            []byte
-	FailedToFixReasons []string
+type result struct {
+	content            []byte
+	failedToFixReasons []string
 }
 
 func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
@@ -52,19 +52,27 @@ func fixFile(fset *token.FileSet, filename string, tree *ast.File) []string {
 	return v.failedToFixReasons
 }
 
-func Process(filename string) (Result, error) {
+func Process(filename string) ([]byte, error) {
+
+	// external caller don't care about failedToFixReasons, that's just for our testing
+	// we already log the actual reasons as we go
+	result, err := process(filename)
+	return result.content, err
+}
+
+func process(filename string) (result, error) {
 	fs := token.NewFileSet()
 
 	// Read the file
 	src, err := os.ReadFile(filename)
 	if err != nil {
-		return Result{}, fmt.Errorf("failed to read file: %w", err)
+		return result{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	// Parse the source file
 	tree, err := parser.ParseFile(fs, filename, src, parser.AllErrors|parser.ParseComments)
 	if err != nil {
-		return Result{}, fmt.Errorf("failed to parse file: %w", err)
+		return result{}, fmt.Errorf("failed to parse file: %w", err)
 	}
 
 	failedToFixReasons := fixFile(fs, filename, tree)
@@ -72,8 +80,8 @@ func Process(filename string) (Result, error) {
 	var buf bytes.Buffer
 	format.Node(&buf, fs, tree)
 
-	return Result{
-		Content:            buf.Bytes(),
-		FailedToFixReasons: failedToFixReasons,
+	return result{
+		content:            buf.Bytes(),
+		failedToFixReasons: failedToFixReasons,
 	}, nil
 }

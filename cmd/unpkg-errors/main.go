@@ -92,11 +92,10 @@ func main() {
 			log.Infof("Processing %s", f)
 		}
 
-		result, err := processor.Process(f)
+		modified, err := processor.Process(f)
 		if err != nil {
 			log.Fatalf("Processing %s: %v", f, err)
 		}
-		modified := result.Content
 
 		if *write {
 			err = os.WriteFile(f, modified, 0o644)
