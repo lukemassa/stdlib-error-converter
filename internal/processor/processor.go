@@ -2,7 +2,6 @@ package processor
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -18,7 +17,6 @@ import (
 const pkgErrors = "github.com/pkg/errors"
 
 type fileVisitor struct {
-	err         error
 	needsErrors bool
 	needsFmt    bool
 	fixed       int
@@ -49,11 +47,7 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 		v.needsFmt = true
 		v.fixed++
 	case "Wrap", "Wrapf":
-		ok, err := fixWrap(call)
-		if err != nil {
-			v.err = errors.Join(v.err, err)
-			return v
-		}
+		ok := fixWrap(call)
 		if !ok {
 			v.failedToFix++
 			return v
@@ -64,25 +58,27 @@ func (v *fileVisitor) Visit(n ast.Node) ast.Visitor {
 		v.fixed++
 
 	default:
-		v.err = errors.Join(v.err, fmt.Errorf("unable to translate for %s", selector.Sel.Name))
+		v.failedToFix++
+		log.Warnf("Cannot translate for errors.%s", selector.Sel.Name)
 	}
 	return v
 }
 
-func fixWrap(call *ast.CallExpr) (bool, error) {
+func fixWrap(call *ast.CallExpr) bool {
 	selector := call.Fun.(*ast.SelectorExpr)
 	if len(call.Args) < 2 {
-		return false, errors.New("wrap call must have at least two args")
+		log.Error("Found call to errors.Wrap() with fewer than 2 args, existing code is not valid")
+		return false
 	}
 	errToWrap, ok := call.Args[0].(*ast.Ident)
 	if !ok {
 		log.Warn("Cannot fix if first call to wrap is not an identifier")
-		return false, nil
+		return false
 	}
 
 	fmtExpr, additionalArgs := getWrapArgs(call.Args[1:])
 	if fmtExpr == nil {
-		return false, nil
+		return false
 	}
 	fmtString := fmtExpr.Value
 
@@ -100,7 +96,7 @@ func fixWrap(call *ast.CallExpr) (bool, error) {
 	selector.Sel = ast.NewIdent("Errorf")
 	call.Args = newArgs
 
-	return true, nil
+	return true
 }
 
 // getWrapArgs takes all the args after the first to Wrap, i.e. after the error
@@ -170,19 +166,16 @@ func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
 	return false
 }
 
-func fixFile(fset *token.FileSet, filename string, tree *ast.File) error {
+func fixFile(fset *token.FileSet, filename string, tree *ast.File) {
 	v := fileVisitor{}
 	if !containsPkgErrors(fset, tree) {
 		log.Debugf("%s: Does not contain %s", filename, pkgErrors)
-		return nil
+		return
 	}
 	ast.Walk(&v, tree)
-	if v.err != nil {
-		return v.err
-	}
 	if v.failedToFix != 0 {
 		log.Infof("%s: Fixed %d, failed to fix %d", filename, v.fixed, v.failedToFix)
-		return nil
+		return
 	}
 	if v.needsErrors {
 		astutil.AddImport(fset, tree, "errors")
@@ -192,7 +185,6 @@ func fixFile(fset *token.FileSet, filename string, tree *ast.File) error {
 	}
 	log.Infof("%s: Fixed %d references to pkg/errors", filename, v.fixed)
 	astutil.DeleteImport(fset, tree, pkgErrors)
-	return nil
 }
 
 func Process(filename string) ([]byte, error) {
@@ -210,10 +202,8 @@ func Process(filename string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to parse file: %w", err)
 	}
 
-	err = fixFile(fs, filename, tree)
-	if err != nil {
-		return nil, err
-	}
+	fixFile(fs, filename, tree)
+
 	var buf bytes.Buffer
 	format.Node(&buf, fs, tree)
 
