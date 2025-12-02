@@ -1,4 +1,4 @@
-module github.com/lukemassa/stdlib-error-converter
+module github.com/lukemassa/unpkg-errors
 
 go 1.24.3
 
