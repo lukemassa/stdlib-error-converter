@@ -14,6 +14,11 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
+type Result struct {
+	Content            []byte
+	FailedToFixReasons []string
+}
+
 func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
 	for _, paragraph := range astutil.Imports(fset, tree) {
 		for _, importSpec := range paragraph {
@@ -25,16 +30,16 @@ func containsPkgErrors(fset *token.FileSet, tree *ast.File) bool {
 	return false
 }
 
-func fixFile(fset *token.FileSet, filename string, tree *ast.File) {
+func fixFile(fset *token.FileSet, filename string, tree *ast.File) []string {
 	v := fileVisitor{}
 	if !containsPkgErrors(fset, tree) {
 		log.Debugf("%s: Does not contain %s", filename, pkgErrors)
-		return
+		return v.failedToFixReasons
 	}
 	ast.Walk(&v, tree)
 	if len(v.failedToFixReasons) != 0 {
 		log.Infof("%s: Fixed %d, failed to fix %d", filename, v.fixed, len(v.failedToFixReasons))
-		return
+		return v.failedToFixReasons
 	}
 	if v.needsErrors {
 		astutil.AddImport(fset, tree, "errors")
@@ -44,27 +49,31 @@ func fixFile(fset *token.FileSet, filename string, tree *ast.File) {
 	}
 	log.Infof("%s: Fixed %d references to pkg/errors", filename, v.fixed)
 	astutil.DeleteImport(fset, tree, pkgErrors)
+	return v.failedToFixReasons
 }
 
-func Process(filename string) ([]byte, error) {
+func Process(filename string) (Result, error) {
 	fs := token.NewFileSet()
 
 	// Read the file
 	src, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return Result{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	// Parse the source file
 	tree, err := parser.ParseFile(fs, filename, src, parser.AllErrors|parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse file: %w", err)
+		return Result{}, fmt.Errorf("failed to parse file: %w", err)
 	}
 
-	fixFile(fs, filename, tree)
+	failedToFixReasons := fixFile(fs, filename, tree)
 
 	var buf bytes.Buffer
 	format.Node(&buf, fs, tree)
 
-	return buf.Bytes(), nil
+	return Result{
+		Content:            buf.Bytes(),
+		FailedToFixReasons: failedToFixReasons,
+	}, nil
 }

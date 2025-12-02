@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testDir = "testdata"
@@ -25,9 +28,8 @@ func fileExists(filename string) (bool, error) {
 func TestProcessFile(t *testing.T) {
 
 	entries, err := os.ReadDir(testDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -36,83 +38,52 @@ func TestProcessFile(t *testing.T) {
 		if !strings.HasSuffix(name, ".go") {
 			continue
 		}
-		beforePath := filepath.Join(testDir, name)
-		shortName := strings.TrimSuffix(name, ".go")
-		afterPath := filepath.Join(testDir, fmt.Sprintf("%s.after", shortName))
-		errorPath := filepath.Join(testDir, fmt.Sprintf("%s.error", shortName))
-		hasAfter, err := fileExists(afterPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		hasError, err := fileExists(errorPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		expectErr := false
-		expectedPath := ""
-		if hasAfter {
-			if hasError {
-				t.Fatalf("Cannot have both after and error file for %s", shortName)
-			} else {
-				// After path is set, test against that
-				expectErr = false
-				expectedPath = afterPath
-			}
-		} else {
-			if hasError {
-				// Error path is set, test against that
-				expectErr = true
-				expectedPath = errorPath
-			} else {
-				// Neither paths are set, we expect the file to be unchanged
-				expectErr = false
-				expectedPath = beforePath
-			}
-
-		}
 		t.Run(name, func(t *testing.T) {
-			testOneFile(t, beforePath, expectedPath, expectErr)
+			beforePath := filepath.Join(testDir, name)
+			shortName := strings.TrimSuffix(name, ".go")
+			afterPath := filepath.Join(testDir, fmt.Sprintf("%s.after", shortName))
+			reasonsPath := filepath.Join(testDir, fmt.Sprintf("%s.reasons", shortName))
+
+			expectedReasons := getReasons(t, reasonsPath)
+
+			actualContent, actualReasons := processFile(t, beforePath)
+
+			afterContent, err := os.ReadFile(afterPath)
+			require.NoError(t, err)
+
+			assert.Equal(t, string(afterContent), string(actualContent))
+
+			assert.Equal(t, expectedReasons, actualReasons)
 		})
-
 	}
-
 }
 
-func testOneFile(t *testing.T, currentFile, expectedPath string, expectErr bool) {
-	beforeContent, err := os.ReadFile(currentFile)
-	if err != nil {
-		t.Fatalf("failed to read current file: %v", err)
+func getReasons(t *testing.T, filename string) []string {
+	data, err := os.ReadFile(filename)
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
+	require.NoError(t, err)
 
-	backupFile := currentFile + ".bak"
-	if err := os.WriteFile(backupFile, beforeContent, 0644); err != nil {
-		t.Fatalf("failed to create backup file: %v", err)
-	}
+	return strings.Split(string(data), "\n")
+}
+
+func processFile(t *testing.T, filename string) ([]byte, []string) {
+	beforeContent, err := os.ReadFile(filename)
+	require.NoError(t, err)
+
+	backupFile := filename + ".bak"
+	err = os.WriteFile(backupFile, beforeContent, 0644)
+	require.NoError(t, err)
+
 	defer func() {
 		// Restore original file after test
-		os.Rename(backupFile, currentFile)
+		os.Rename(backupFile, filename)
 	}()
 
-	expectedContent, err := os.ReadFile(expectedPath)
-	if err != nil {
-		t.Fatalf("failed to read after file: %v", err)
-	}
+	processedContent, err := Process(filename)
+	require.NoError(t, err)
 
-	processedContent, err := Process(currentFile)
-	if expectErr {
-		if err == nil {
-			t.Errorf("no error occurred, expected:\n%s", expectedContent)
-			return
-		}
-		if err.Error() != string(expectedContent) {
-			t.Errorf("processed file does not match expected output\nExpected:\n%s\nGot:\n%s", expectedContent, err.Error())
-		}
-		return
-	}
-	if err != nil {
-		t.Errorf("processFile failed: %v", err)
-	}
-	if string(processedContent) != string(expectedContent) {
-		t.Errorf("processed file does not match expected output\nExpected:\n%s\nGot:\n%s", expectedContent, processedContent)
-	}
+	return processedContent.Content, processedContent.FailedToFixReasons
+
 }
