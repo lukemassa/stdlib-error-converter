@@ -1,3 +1,1 @@
-- Can we assert/check that err is not nil?
-- Handle Unwrap?
-- Use Is() instead of Cause() ?
+- The code doesn't error anymore, check that "reasons" match
