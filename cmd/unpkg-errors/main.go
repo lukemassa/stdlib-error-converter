@@ -8,7 +8,7 @@ import (
 
 	log "github.com/lukemassa/clilog"
 
-	"github.com/lukemassa/stdlib-error-converter/internal/processor"
+	"github.com/lukemassa/unpkg-errors/internal/processor"
 )
 
 func gatherFiles(paths []string, recursive bool) ([]string, error) {
